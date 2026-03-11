@@ -1,0 +1,305 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Appointment booking service with Node.js, Express, and AWS SAM
+
+Parameters:
+  CognitoUserPoolId:
+    Type: String
+    Description: ID of the Cognito User Pool for JWT auth
+  CognitoClientId:
+    Type: String
+    Description: Cognito app client ID used as JWT audience
+  ServiceTimezone:
+    Type: String
+    Default: America/New_York
+  ServiceLanguage:
+    Type: String
+    Default: en-US
+  ServiceCurrency:
+    Type: String
+    Default: USD
+  CalendarScheduleGroupName:
+    Type: String
+    Description: EventBridge Scheduler group name for AWS-native calendar scheduling
+  NotificationPhoneNumber:
+    Type: String
+    Description: SMS phone number for text notifications in E.164 format
+  LexBotAliasArn:
+    Type: String
+    Description: Lex V2 bot alias ARN for invoke permission
+  ConnectInstanceArn:
+    Type: String
+    Description: Amazon Connect instance ARN for invoke permission
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        APPOINTMENTS_TABLE: !Ref AppointmentsTable
+        PHONE_AUTH_TABLE: !Ref PhoneAuthTable
+        APPOINTMENT_ARCHIVE_BUCKET: !Ref AppointmentArchiveBucket
+        SERVICE_TIMEZONE: !Ref ServiceTimezone
+        SERVICE_LANGUAGE: !Ref ServiceLanguage
+        SERVICE_CURRENCY: !Ref ServiceCurrency
+        CALENDAR_SCHEDULE_GROUP_NAME: !Ref CalendarScheduleGroupName
+        NOTIFICATION_PHONE_NUMBER: !Ref NotificationPhoneNumber
+        OTP_TTL_SECONDS: 300
+
+Resources:
+  AppointmentApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
+        AllowHeaders: [Content-Type, Authorization]
+        AllowOrigins: ['*']
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            JwtConfiguration:
+              audience:
+                - !Ref CognitoClientId
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}
+            IdentitySource: "$request.header.Authorization"
+        DefaultAuthorizer: CognitoAuthorizer
+
+  AppointmentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handler.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AppointmentsTable
+        - S3CrudPolicy:
+            BucketName: !Ref AppointmentArchiveBucket
+      Events:
+        ApiProxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AppointmentApi
+            Path: /{proxy+}
+            Method: ANY
+        ApiRoot:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AppointmentApi
+            Path: /
+            Method: ANY
+
+  VoiceFulfillmentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/voiceHandler.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AppointmentsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PhoneAuthTable
+        - S3CrudPolicy:
+            BucketName: !Ref AppointmentArchiveBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - sns:Publish
+              Resource: "*"
+
+  LexInvokeVoicePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref VoiceFulfillmentFunction
+      Principal: lexv2.amazonaws.com
+      SourceArn: !Ref LexBotAliasArn
+
+  ConnectInvokeVoicePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref VoiceFulfillmentFunction
+      Principal: connect.amazonaws.com
+      SourceArn: !Ref ConnectInstanceArn
+
+  AppointmentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: appointmentId
+          AttributeType: S
+        - AttributeName: contactPhone
+          AttributeType: S
+      KeySchema:
+        - AttributeName: appointmentId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: contactPhoneIndex
+          KeySchema:
+            - AttributeName: contactPhone
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  PhoneAuthTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: phoneNumber
+          AttributeType: S
+      KeySchema:
+        - AttributeName: phoneNumber
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  AppointmentArchiveBucket:
+    Type: AWS::S3::Bucket
+
+  BucketCleanupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      InlineCode: |
+        const { S3Client, ListObjectVersionsCommand, ListObjectsV2Command, DeleteObjectsCommand } = require("@aws-sdk/client-s3");
+        const https = require("https");
+        const { URL } = require("url");
+
+        const s3 = new S3Client({});
+
+        async function sendResponse(event, context, status, reason) {
+          const responseBody = JSON.stringify({
+            Status: status,
+            Reason: reason || `See CloudWatch Logs: ${context.logStreamName}`,
+            PhysicalResourceId: event.PhysicalResourceId || event.LogicalResourceId,
+            StackId: event.StackId,
+            RequestId: event.RequestId,
+            LogicalResourceId: event.LogicalResourceId
+          });
+
+          const parsedUrl = new URL(event.ResponseURL);
+          await new Promise((resolve, reject) => {
+            const req = https.request(
+              {
+                hostname: parsedUrl.hostname,
+                path: `${parsedUrl.pathname}${parsedUrl.search}`,
+                method: "PUT",
+                headers: {
+                  "content-type": "",
+                  "content-length": Buffer.byteLength(responseBody)
+                }
+              },
+              (res) => {
+                res.on("data", () => {});
+                res.on("end", resolve);
+              }
+            );
+            req.on("error", reject);
+            req.write(responseBody);
+            req.end();
+          });
+        }
+
+        async function emptyBucket(bucketName) {
+          let truncated = true;
+          let keyMarker;
+          let versionIdMarker;
+
+          while (truncated) {
+            const versionsPage = await s3.send(
+              new ListObjectVersionsCommand({
+                Bucket: bucketName,
+                KeyMarker: keyMarker,
+                VersionIdMarker: versionIdMarker
+              })
+            );
+
+            const versionEntries = (versionsPage.Versions || []).map((v) => ({ Key: v.Key, VersionId: v.VersionId }));
+            const markerEntries = (versionsPage.DeleteMarkers || []).map((m) => ({ Key: m.Key, VersionId: m.VersionId }));
+            const allVersioned = [...versionEntries, ...markerEntries];
+
+            if (allVersioned.length > 0) {
+              await s3.send(
+                new DeleteObjectsCommand({
+                  Bucket: bucketName,
+                  Delete: { Objects: allVersioned, Quiet: true }
+                })
+              );
+            }
+
+            truncated = Boolean(versionsPage.IsTruncated);
+            keyMarker = versionsPage.NextKeyMarker;
+            versionIdMarker = versionsPage.NextVersionIdMarker;
+          }
+
+          let continuationToken;
+          while (true) {
+            const objectsPage = await s3.send(
+              new ListObjectsV2Command({
+                Bucket: bucketName,
+                ContinuationToken: continuationToken
+              })
+            );
+
+            const objects = (objectsPage.Contents || []).map((o) => ({ Key: o.Key }));
+            if (objects.length > 0) {
+              await s3.send(
+                new DeleteObjectsCommand({
+                  Bucket: bucketName,
+                  Delete: { Objects: objects, Quiet: true }
+                })
+              );
+            }
+
+            if (!objectsPage.IsTruncated) break;
+            continuationToken = objectsPage.NextContinuationToken;
+          }
+        }
+
+        exports.handler = async (event, context) => {
+          const bucketName = event.ResourceProperties.BucketName;
+          try {
+            if (event.RequestType === "Delete") {
+              await emptyBucket(bucketName);
+            }
+            await sendResponse(event, context, "SUCCESS");
+          } catch (error) {
+            console.error("Bucket cleanup failed", error);
+            await sendResponse(event, context, "FAILED", error.message);
+          }
+        };
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:ListBucket
+                - s3:ListBucketVersions
+              Resource: !GetAtt AppointmentArchiveBucket.Arn
+            - Effect: Allow
+              Action:
+                - s3:DeleteObject
+                - s3:DeleteObjectVersion
+              Resource: !Sub ${AppointmentArchiveBucket.Arn}/*
+
+  EmptyArchiveBucketOnDelete:
+    Type: Custom::EmptyArchiveBucket
+    Properties:
+      ServiceToken: !GetAtt BucketCleanupFunction.Arn
+      BucketName: !Ref AppointmentArchiveBucket
+
+Outputs:
+  ApiUrl:
+    Description: API endpoint URL
+    Value: !Sub https://${AppointmentApi}.execute-api.${AWS::Region}.amazonaws.com
+  AppointmentsTableName:
+    Value: !Ref AppointmentsTable
+  PhoneAuthTableName:
+    Value: !Ref PhoneAuthTable
+  AppointmentArchiveBucketName:
+    Value: !Ref AppointmentArchiveBucket
+  VoiceFulfillmentFunctionArn:
+    Value: !GetAtt VoiceFulfillmentFunction.Arn

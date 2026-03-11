@@ -1,0 +1,38 @@
+version = 0.1
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[dev.deploy.parameters]
+stack_name = "voice-automation-dev"
+resolve_s3 = true
+s3_prefix = "voice-automation-dev"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "CognitoUserPoolId=REPLACE_ME CognitoClientId=REPLACE_ME ServiceTimezone=America/New_York ServiceLanguage=en-US ServiceCurrency=USD CalendarScheduleGroupName=appointments NotificationPhoneNumber=+12065550100 LexBotAliasArn=REPLACE_ME ConnectInstanceArn=REPLACE_ME"
+
+[dev.delete.parameters]
+stack_name = "voice-automation-dev"
+
+[stage.deploy.parameters]
+stack_name = "voice-automation-stage"
+resolve_s3 = true
+s3_prefix = "voice-automation-stage"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "CognitoUserPoolId=REPLACE_ME CognitoClientId=REPLACE_ME ServiceTimezone=America/New_York ServiceLanguage=en-US ServiceCurrency=USD CalendarScheduleGroupName=appointments NotificationPhoneNumber=+12065550100 LexBotAliasArn=REPLACE_ME ConnectInstanceArn=REPLACE_ME"
+
+[stage.delete.parameters]
+stack_name = "voice-automation-stage"
+
+[prod.deploy.parameters]
+stack_name = "voice-automation-prod"
+resolve_s3 = true
+s3_prefix = "voice-automation-prod"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "CognitoUserPoolId=REPLACE_ME CognitoClientId=REPLACE_ME ServiceTimezone=America/New_York ServiceLanguage=en-US ServiceCurrency=USD CalendarScheduleGroupName=appointments NotificationPhoneNumber=+12065550100 LexBotAliasArn=REPLACE_ME ConnectInstanceArn=REPLACE_ME"
+
+[prod.delete.parameters]
+stack_name = "voice-automation-prod"

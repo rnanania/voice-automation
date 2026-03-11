@@ -1,0 +1,25 @@
+Lets create a simple service to let user book the appointment.
+I would like to use AWS SAM framework.
+
+The service should be able to:
+- Let user book the appointment
+- Let user cancel the appointment
+- Let user reschedule the appointment
+- Let user view the appointment
+- Let user view the appointment history
+- Let user view the appointment details
+
+
+I would like to do this over the phone.
+Lets use nodejs and express.
+Lets use AWS Lambda and API Gateway.
+Lets use AWS DynamoDB to store the appointment data.
+Lets use AWS S3 to store the appointment data.
+
+
+We should be able to configure the timezone for the service.
+We should be able to configure the language for the service.
+We should be able to configure the currency for the service.
+
+
+Lets use the phone number provided by AWS Cognito.

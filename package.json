@@ -1,0 +1,29 @@
+{
+  "name": "voice-automation",
+  "version": "1.0.0",
+  "description": "Serverless appointment booking API with AWS SAM",
+  "main": "src/handler.js",
+  "scripts": {
+    "build": "sam build",
+    "local:start": "sam local start-api",
+    "env:check": "bash ./scripts/check-env.sh",
+    "deploy:env": "bash ./scripts/deploy-from-env.sh dev",
+    "deploy:env:stage": "bash ./scripts/deploy-from-env.sh stage",
+    "deploy:env:prod": "bash ./scripts/deploy-from-env.sh prod",
+    "test": "node --test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1006.0",
+    "@aws-sdk/client-s3": "^3.1006.0",
+    "@aws-sdk/client-sns": "^3.1006.0",
+    "@aws-sdk/lib-dynamodb": "^3.1006.0",
+    "express": "^5.2.1",
+    "luxon": "^3.7.2",
+    "serverless-http": "^4.0.0",
+    "uuid": "^13.0.0"
+  }
+}
