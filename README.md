@@ -1,4 +1,5 @@
 # Appointment Service (AWS SAM)
+Project was started with simple prompt to Cursor using GPT-5.3 Codex.
 
 Serverless appointment API with AWS SAM, Node.js/Express, Lambda, API Gateway, DynamoDB, and S3.  
 Voice channel is Amazon Connect + Lex V2 with OTP-by-SMS verification for sensitive actions.
