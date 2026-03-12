@@ -115,6 +115,11 @@ Assuming your AWS principal has admin access, complete these once:
 - `GET /config`
 - `GET /health`
 
+Booking constraint:
+- A phone number can have only one future active appointment (`BOOKED` or `RESCHEDULED`).
+- If another future appointment exists, booking returns `409` and includes the existing `appointmentId`.
+- Past appointments are unlimited.
+
 ## API Auth and Identity
 
 - API is protected by Cognito JWT authorizer (API Gateway).

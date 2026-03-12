@@ -48,15 +48,26 @@ app.post("/appointments", async (req, res) => {
     return res.status(400).json({ message: error.message });
   }
 
-  const appointment = await createAppointment({
-    userId: userId || phoneNumber,
-    firstName,
-    lastName,
-    contactPhone: phoneNumber || "",
-    scheduledAt: resolvedScheduledAt,
-    notes,
-    source: source || "phone"
-  });
+  let appointment;
+  try {
+    appointment = await createAppointment({
+      userId: userId || phoneNumber,
+      firstName,
+      lastName,
+      contactPhone: phoneNumber || "",
+      scheduledAt: resolvedScheduledAt,
+      notes,
+      source: source || "phone"
+    });
+  } catch (error) {
+    if (error.name === "FutureAppointmentExistsError") {
+      return res.status(409).json({
+        message: "You already have a future appointment. Cancel or reschedule it before booking a new one.",
+        appointmentId: error.appointmentId
+      });
+    }
+    throw error;
+  }
 
   return res.status(201).json(appointment);
 });

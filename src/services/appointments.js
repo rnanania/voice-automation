@@ -8,6 +8,7 @@ const s3 = new S3Client({});
 
 const tableName = process.env.APPOINTMENTS_TABLE;
 const archiveBucket = process.env.APPOINTMENT_ARCHIVE_BUCKET;
+const ACTIVE_APPOINTMENT_STATUSES = new Set(["BOOKED", "RESCHEDULED"]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -37,7 +38,29 @@ function buildHistoryEvent(action, changedBy, metadata) {
   };
 }
 
+function isFutureActiveAppointment(appointment, nowEpochMs) {
+  if (!appointment) return false;
+  if (!ACTIVE_APPOINTMENT_STATUSES.has(appointment.status)) return false;
+  const scheduledEpochMs = Date.parse(appointment.scheduledAt || "");
+  if (!Number.isFinite(scheduledEpochMs)) return false;
+  return scheduledEpochMs > nowEpochMs;
+}
+
+async function findFutureActiveAppointment(contactPhone) {
+  const appointments = await listAppointments(contactPhone);
+  const nowEpochMs = Date.now();
+  return appointments.find((appointment) => isFutureActiveAppointment(appointment, nowEpochMs)) || null;
+}
+
 async function createAppointment({ userId, firstName, lastName, contactPhone, scheduledAt, notes, source = "phone" }) {
+  const existingFutureAppointment = await findFutureActiveAppointment(contactPhone);
+  if (existingFutureAppointment) {
+    const error = new Error("A future appointment already exists for this phone number.");
+    error.name = "FutureAppointmentExistsError";
+    error.appointmentId = existingFutureAppointment.appointmentId;
+    throw error;
+  }
+
   const appointmentId = randomUUID();
   const timestamp = nowIso();
   const historyEvent = buildHistoryEvent("booked", userId, { scheduledAt, source, firstName, lastName });
