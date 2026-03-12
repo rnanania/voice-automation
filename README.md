@@ -169,6 +169,48 @@ Deploy helpers:
 - `npm run deploy:env:stage`
 - `npm run deploy:env:prod`
 
+## Sample Phone Call Walkthrough
+
+This is a realistic example of how the service works during a live call.
+
+1. Caller books an appointment
+   - Caller says: "Book an appointment for John Doe tomorrow at 3 PM."
+   - Lex intent: `BookAppointmentIntent`
+   - Service action:
+     - Converts day/time using `America/New_York`
+     - Stores appointment in DynamoDB
+     - Writes archive snapshot to S3
+   - Voice response example:
+     - "Booked. Your appointment ID is `<appointmentId>`."
+
+2. Caller asks for details (OTP required)
+   - Caller says: "Show details for appointment `<appointmentId>`."
+   - Lex intent: `ViewAppointmentDetailsIntent`
+   - Service action:
+     - Sends OTP by SMS to caller phone
+   - Voice response example:
+     - "For security, I sent a verification code by text. Say verify code and provide the 6-digit code."
+
+3. Caller verifies OTP
+   - Caller says: "Verify code 123456."
+   - Lex intent: `VerifyOtpIntent`
+   - Service action:
+     - Validates OTP from `PhoneAuthTable` (TTL-based)
+   - Voice response example:
+     - "Verification successful. You can continue with your request."
+
+4. Caller retries details / reschedules / cancels
+   - Caller says: "Show details for appointment `<appointmentId>`."
+   - Or: "Reschedule appointment `<appointmentId>` to Friday at 10 AM."
+   - Or: "Cancel appointment `<appointmentId>`."
+   - Service action:
+     - Allows action now that phone is verified
+     - Enforces phone-based ownership (`contactPhone`)
+
+5. Booking rule behavior
+   - If caller already has one future active appointment, a second booking is blocked.
+   - Caller must cancel existing future appointment or reschedule it.
+
 ## Key Parameters
 
 In `template.yaml`:
