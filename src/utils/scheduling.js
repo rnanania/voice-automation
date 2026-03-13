@@ -3,6 +3,11 @@ const { DateTime } = require("luxon");
 const NEW_YORK_TIMEZONE = "America/New_York";
 const SLOT_MINUTES = 15;
 
+function hasExplicitTimezone(value) {
+  const text = String(value).trim();
+  return /(Z|[+-]\d{2}:?\d{2})$/i.test(text);
+}
+
 function parseDateInNewYork(scheduledDay) {
   if (!scheduledDay) return null;
 
@@ -59,7 +64,10 @@ function buildSlotWindow(dateTimeInNewYork) {
 
 function resolveScheduleWindow({ scheduledAt, scheduledDay, scheduledTime }) {
   if (scheduledAt) {
-    const parsed = DateTime.fromISO(String(scheduledAt), { setZone: true });
+    const input = String(scheduledAt);
+    const parsed = hasExplicitTimezone(input)
+      ? DateTime.fromISO(input, { setZone: true })
+      : DateTime.fromISO(input, { zone: NEW_YORK_TIMEZONE });
     if (!parsed.isValid) {
       throw new Error("scheduledAt is invalid. Provide ISO format or day/time.");
     }
