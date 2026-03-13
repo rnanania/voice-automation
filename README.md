@@ -167,6 +167,7 @@ Examples:
 Voice security behavior:
 - `cancel`, `reschedule`, `details`, and `history` require OTP verification first.
 - OTP is sent by SMS to caller phone and verified via `VerifyOtpIntent`.
+- Voice authorization checks always use caller `contactPhone` (never `userId`) for ownership validation.
 
 Deploy helpers:
 - `npm run env:check`

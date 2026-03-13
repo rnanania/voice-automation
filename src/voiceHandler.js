@@ -60,6 +60,7 @@ function normalizeIdentityFromConnect(event) {
 
 async function handleBook({ userId, firstName, lastName, contactPhone, scheduledAt, scheduledDay, scheduledTime, notes }) {
   if (!firstName || !lastName) throw new Error("firstName and lastName are required to book an appointment.");
+  if (!contactPhone) throw new Error("phone number is required to book an appointment.");
   const scheduleWindow = resolveScheduleWindow({ scheduledAt, scheduledDay, scheduledTime });
   const appointment = await createAppointment({
     userId,
@@ -76,17 +77,19 @@ async function handleBook({ userId, firstName, lastName, contactPhone, scheduled
   return { appointment, message: `Booked. Your appointment ID is ${appointment.appointmentId}.` };
 }
 
-async function handleCancel({ userId, appointmentId, reason }) {
+async function handleCancel({ contactPhone, appointmentId, reason }) {
+  if (!contactPhone) throw new Error("phone number is required to cancel.");
   if (!appointmentId) throw new Error("appointmentId is required to cancel.");
-  const appointment = await cancelAppointment({ contactPhone: userId, appointmentId, reason });
+  const appointment = await cancelAppointment({ contactPhone, appointmentId, reason });
   return { appointment, message: `Appointment ${appointment.appointmentId} was cancelled.` };
 }
 
-async function handleReschedule({ userId, appointmentId, scheduledAt, scheduledDay, scheduledTime, reason }) {
+async function handleReschedule({ contactPhone, appointmentId, scheduledAt, scheduledDay, scheduledTime, reason }) {
+  if (!contactPhone) throw new Error("phone number is required to reschedule.");
   if (!appointmentId) throw new Error("appointmentId is required to reschedule.");
   const scheduleWindow = resolveScheduleWindow({ scheduledAt, scheduledDay, scheduledTime });
   const appointment = await rescheduleAppointment({
-    contactPhone: userId,
+    contactPhone,
     appointmentId,
     scheduledAt: scheduleWindow.scheduledAtUtc,
     scheduledEndAt: scheduleWindow.scheduledEndAtUtc,
@@ -97,23 +100,26 @@ async function handleReschedule({ userId, appointmentId, scheduledAt, scheduledD
   return { appointment, message: `Appointment ${appointment.appointmentId} was rescheduled to ${appointment.scheduledAt}.` };
 }
 
-async function handleList({ userId }) {
-  const items = await listAppointments(userId);
+async function handleList({ contactPhone }) {
+  if (!contactPhone) throw new Error("phone number is required to list appointments.");
+  const items = await listAppointments(contactPhone);
   if (items.length === 0) return { items, message: "You have no appointments." };
   return { items, message: `You have ${items.length} appointment(s).` };
 }
 
-async function handleDetails({ userId, appointmentId }) {
+async function handleDetails({ contactPhone, appointmentId }) {
+  if (!contactPhone) throw new Error("phone number is required to view details.");
   if (!appointmentId) throw new Error("appointmentId is required to view details.");
   const appointment = await getAppointment(appointmentId);
-  if (!appointment || appointment.contactPhone !== userId) throw new Error("Appointment not found.");
+  if (!appointment || appointment.contactPhone !== contactPhone) throw new Error("Appointment not found.");
   return { appointment, message: `Appointment ${appointment.appointmentId} is ${appointment.status} at ${appointment.scheduledAt}.` };
 }
 
-async function handleHistory({ userId, appointmentId }) {
+async function handleHistory({ contactPhone, appointmentId }) {
+  if (!contactPhone) throw new Error("phone number is required to view history.");
   if (!appointmentId) throw new Error("appointmentId is required to view history.");
   const appointment = await getAppointment(appointmentId);
-  if (!appointment || appointment.contactPhone !== userId) throw new Error("Appointment not found.");
+  if (!appointment || appointment.contactPhone !== contactPhone) throw new Error("Appointment not found.");
   const events = appointment.history || [];
   return { events, message: `Appointment ${appointmentId} has ${events.length} history event(s).` };
 }
@@ -124,7 +130,7 @@ exports.handler = async (event) => {
       const intentName = event.sessionState.intent.name;
       const slots = event.sessionState.intent.slots || {};
       const identity = normalizeIdentityFromLex(event);
-      const phoneNumber = identity.contactPhone || identity.userId;
+      const phoneNumber = identity.contactPhone;
 
       if (intentName === "VerifyOtpIntent") {
         const otpCode = getLexSlotValue(slots, "OtpCode");
@@ -177,13 +183,13 @@ exports.handler = async (event) => {
         });
       } else if (intentName === "CancelAppointmentIntent") {
         result = await handleCancel({
-          userId: identity.userId,
+          contactPhone: phoneNumber,
           appointmentId: getLexSlotValue(slots, "AppointmentId"),
           reason: getLexSlotValue(slots, "Reason")
         });
       } else if (intentName === "RescheduleAppointmentIntent") {
         result = await handleReschedule({
-          userId: identity.userId,
+          contactPhone: phoneNumber,
           appointmentId: getLexSlotValue(slots, "AppointmentId"),
           scheduledAt: getLexSlotValue(slots, "ScheduledAt"),
           scheduledDay: getLexSlotValue(slots, "ScheduledDay"),
@@ -191,15 +197,15 @@ exports.handler = async (event) => {
           reason: getLexSlotValue(slots, "Reason")
         });
       } else if (intentName === "ViewAppointmentsIntent") {
-        result = await handleList({ userId: identity.userId });
+        result = await handleList({ contactPhone: phoneNumber });
       } else if (intentName === "ViewAppointmentDetailsIntent") {
         result = await handleDetails({
-          userId: identity.userId,
+          contactPhone: phoneNumber,
           appointmentId: getLexSlotValue(slots, "AppointmentId")
         });
       } else if (intentName === "ViewAppointmentHistoryIntent") {
         result = await handleHistory({
-          userId: identity.userId,
+          contactPhone: phoneNumber,
           appointmentId: getLexSlotValue(slots, "AppointmentId")
         });
       } else {
@@ -227,7 +233,7 @@ exports.handler = async (event) => {
       const identity = normalizeIdentityFromConnect(event);
       const params = event.Details?.Parameters || {};
       const action = (params.Action || "").toLowerCase();
-      const phoneNumber = identity.contactPhone || identity.userId;
+      const phoneNumber = identity.contactPhone;
       const restrictedActions = new Set(["cancel", "reschedule", "details", "history"]);
 
       if (action === "verifyotp") {
@@ -265,13 +271,13 @@ exports.handler = async (event) => {
         });
       } else if (action === "cancel") {
         result = await handleCancel({
-          userId: identity.userId,
+          contactPhone: phoneNumber,
           appointmentId: params.AppointmentId,
           reason: params.Reason
         });
       } else if (action === "reschedule") {
         result = await handleReschedule({
-          userId: identity.userId,
+          contactPhone: phoneNumber,
           appointmentId: params.AppointmentId,
           scheduledAt: params.ScheduledAt,
           scheduledDay: params.ScheduledDay,
@@ -279,11 +285,11 @@ exports.handler = async (event) => {
           reason: params.Reason
         });
       } else if (action === "list") {
-        result = await handleList({ userId: identity.userId });
+        result = await handleList({ contactPhone: phoneNumber });
       } else if (action === "details") {
-        result = await handleDetails({ userId: identity.userId, appointmentId: params.AppointmentId });
+        result = await handleDetails({ contactPhone: phoneNumber, appointmentId: params.AppointmentId });
       } else if (action === "history") {
-        result = await handleHistory({ userId: identity.userId, appointmentId: params.AppointmentId });
+        result = await handleHistory({ contactPhone: phoneNumber, appointmentId: params.AppointmentId });
       } else {
         return { success: false, message: "Unsupported action for Amazon Connect Lambda block." };
       }
