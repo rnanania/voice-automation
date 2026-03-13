@@ -1,6 +1,7 @@
 const { DateTime } = require("luxon");
 
 const NEW_YORK_TIMEZONE = "America/New_York";
+const SLOT_MINUTES = 15;
 
 function parseDateInNewYork(scheduledDay) {
   if (!scheduledDay) return null;
@@ -37,13 +38,32 @@ function parseTimeInNewYork(scheduledTime) {
   return null;
 }
 
-function resolveScheduledAt({ scheduledAt, scheduledDay, scheduledTime }) {
+function normalizeAndValidateSlot(dateTimeInNewYork) {
+  const normalized = dateTimeInNewYork.set({ second: 0, millisecond: 0 });
+  if (normalized.minute % SLOT_MINUTES !== 0) {
+    throw new Error("Appointments must start at a 15-minute boundary (e.g. 12:00, 12:15, 12:30, 12:45).");
+  }
+  return normalized;
+}
+
+function buildSlotWindow(dateTimeInNewYork) {
+  const slotStart = normalizeAndValidateSlot(dateTimeInNewYork);
+  const slotEnd = slotStart.plus({ minutes: SLOT_MINUTES });
+  return {
+    scheduledAtUtc: slotStart.toUTC().toISO(),
+    scheduledEndAtUtc: slotEnd.toUTC().toISO(),
+    slotStartUtc: slotStart.toUTC().toISO({ suppressMilliseconds: true }),
+    slotEndUtc: slotEnd.toUTC().toISO({ suppressMilliseconds: true })
+  };
+}
+
+function resolveScheduleWindow({ scheduledAt, scheduledDay, scheduledTime }) {
   if (scheduledAt) {
     const parsed = DateTime.fromISO(String(scheduledAt), { setZone: true });
     if (!parsed.isValid) {
       throw new Error("scheduledAt is invalid. Provide ISO format or day/time.");
     }
-    return parsed.setZone(NEW_YORK_TIMEZONE).toUTC().toISO();
+    return buildSlotWindow(parsed.setZone(NEW_YORK_TIMEZONE));
   }
 
   const day = parseDateInNewYork(scheduledDay);
@@ -51,14 +71,11 @@ function resolveScheduledAt({ scheduledAt, scheduledDay, scheduledTime }) {
   if (!day || !time) {
     throw new Error("Provide scheduledAt or both scheduledDay and scheduledTime.");
   }
-
-  return day
-    .set({ hour: time.hour, minute: time.minute, second: 0, millisecond: 0 })
-    .toUTC()
-    .toISO();
+  return buildSlotWindow(day.set({ hour: time.hour, minute: time.minute, second: 0, millisecond: 0 }));
 }
 
 module.exports = {
   NEW_YORK_TIMEZONE,
-  resolveScheduledAt
+  SLOT_MINUTES,
+  resolveScheduleWindow
 };

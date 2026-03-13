@@ -6,7 +6,7 @@ const {
   rescheduleAppointment
 } = require("./services/appointments");
 const { issueOtp, verifyOtp } = require("./services/phoneAuth");
-const { resolveScheduledAt } = require("./utils/scheduling");
+const { resolveScheduleWindow } = require("./utils/scheduling");
 const RESTRICTED_INTENTS = new Set([
   "CancelAppointmentIntent",
   "RescheduleAppointmentIntent",
@@ -60,13 +60,16 @@ function normalizeIdentityFromConnect(event) {
 
 async function handleBook({ userId, firstName, lastName, contactPhone, scheduledAt, scheduledDay, scheduledTime, notes }) {
   if (!firstName || !lastName) throw new Error("firstName and lastName are required to book an appointment.");
-  const resolvedScheduledAt = resolveScheduledAt({ scheduledAt, scheduledDay, scheduledTime });
+  const scheduleWindow = resolveScheduleWindow({ scheduledAt, scheduledDay, scheduledTime });
   const appointment = await createAppointment({
     userId,
     firstName,
     lastName,
     contactPhone,
-    scheduledAt: resolvedScheduledAt,
+    scheduledAt: scheduleWindow.scheduledAtUtc,
+    scheduledEndAt: scheduleWindow.scheduledEndAtUtc,
+    slotStart: scheduleWindow.slotStartUtc,
+    slotEnd: scheduleWindow.slotEndUtc,
     notes,
     source: "phone"
   });
@@ -81,8 +84,16 @@ async function handleCancel({ userId, appointmentId, reason }) {
 
 async function handleReschedule({ userId, appointmentId, scheduledAt, scheduledDay, scheduledTime, reason }) {
   if (!appointmentId) throw new Error("appointmentId is required to reschedule.");
-  const resolvedScheduledAt = resolveScheduledAt({ scheduledAt, scheduledDay, scheduledTime });
-  const appointment = await rescheduleAppointment({ contactPhone: userId, appointmentId, scheduledAt: resolvedScheduledAt, reason });
+  const scheduleWindow = resolveScheduleWindow({ scheduledAt, scheduledDay, scheduledTime });
+  const appointment = await rescheduleAppointment({
+    contactPhone: userId,
+    appointmentId,
+    scheduledAt: scheduleWindow.scheduledAtUtc,
+    scheduledEndAt: scheduleWindow.scheduledEndAtUtc,
+    slotStart: scheduleWindow.slotStartUtc,
+    slotEnd: scheduleWindow.slotEndUtc,
+    reason
+  });
   return { appointment, message: `Appointment ${appointment.appointmentId} was rescheduled to ${appointment.scheduledAt}.` };
 }
 

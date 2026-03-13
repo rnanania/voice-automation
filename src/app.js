@@ -7,7 +7,7 @@ const {
   rescheduleAppointment
 } = require("./services/appointments");
 const { getServiceConfig } = require("./config");
-const { resolveScheduledAt } = require("./utils/scheduling");
+const { resolveScheduleWindow } = require("./utils/scheduling");
 
 const app = express();
 app.use(express.json());
@@ -41,9 +41,9 @@ app.post("/appointments", async (req, res) => {
   if (!firstName || !lastName) {
     return res.status(400).json({ message: "firstName and lastName are required." });
   }
-  let resolvedScheduledAt;
+  let scheduleWindow;
   try {
-    resolvedScheduledAt = resolveScheduledAt({ scheduledAt, scheduledDay, scheduledTime });
+    scheduleWindow = resolveScheduleWindow({ scheduledAt, scheduledDay, scheduledTime });
   } catch (error) {
     return res.status(400).json({ message: error.message });
   }
@@ -55,7 +55,10 @@ app.post("/appointments", async (req, res) => {
       firstName,
       lastName,
       contactPhone: phoneNumber || "",
-      scheduledAt: resolvedScheduledAt,
+      scheduledAt: scheduleWindow.scheduledAtUtc,
+      scheduledEndAt: scheduleWindow.scheduledEndAtUtc,
+      slotStart: scheduleWindow.slotStartUtc,
+      slotEnd: scheduleWindow.slotEndUtc,
       notes,
       source: source || "phone"
     });
@@ -64,6 +67,12 @@ app.post("/appointments", async (req, res) => {
       return res.status(409).json({
         message: "You already have a future appointment. Cancel or reschedule it before booking a new one.",
         appointmentId: error.appointmentId
+      });
+    }
+    if (error.name === "SlotUnavailableError") {
+      return res.status(409).json({
+        message: "This 15-minute window is already booked. Please choose another slot.",
+        slotStart: error.slotStart
       });
     }
     throw error;
@@ -134,9 +143,9 @@ app.put("/appointments/:appointmentId/reschedule", async (req, res) => {
     return res.status(401).json({ message: "Unauthorized: phone number is required." });
   }
 
-  let resolvedScheduledAt;
+  let scheduleWindow;
   try {
-    resolvedScheduledAt = resolveScheduledAt({
+    scheduleWindow = resolveScheduleWindow({
       scheduledAt: req.body?.scheduledAt,
       scheduledDay: req.body?.scheduledDay,
       scheduledTime: req.body?.scheduledTime
@@ -149,11 +158,20 @@ app.put("/appointments/:appointmentId/reschedule", async (req, res) => {
     const result = await rescheduleAppointment({
       appointmentId: req.params.appointmentId,
       contactPhone: phoneNumber,
-      scheduledAt: resolvedScheduledAt,
+      scheduledAt: scheduleWindow.scheduledAtUtc,
+      scheduledEndAt: scheduleWindow.scheduledEndAtUtc,
+      slotStart: scheduleWindow.slotStartUtc,
+      slotEnd: scheduleWindow.slotEndUtc,
       reason: req.body.reason
     });
     return res.status(200).json(result);
-  } catch (_error) {
+  } catch (error) {
+    if (error.name === "SlotUnavailableError") {
+      return res.status(409).json({
+        message: "This 15-minute window is already booked. Please choose another slot.",
+        slotStart: error.slotStart
+      });
+    }
     return res.status(404).json({ message: "Appointment not found or user mismatch." });
   }
 });

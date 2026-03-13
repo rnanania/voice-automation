@@ -119,6 +119,8 @@ Booking constraint:
 - A phone number can have only one future active appointment (`BOOKED` or `RESCHEDULED`).
 - If another future appointment exists, booking returns `409` and includes the existing `appointmentId`.
 - Past appointments are unlimited.
+- Appointments are fixed 15-minute windows and must start on quarter-hour boundaries (`:00`, `:15`, `:30`, `:45`).
+- Only one user can hold a given 15-minute window at a time across the whole system.
 
 ## API Auth and Identity
 
@@ -142,6 +144,9 @@ curl -X POST "$API_URL/appointments" \
 ```
 
 Scheduling is normalized to `America/New_York` (EST/EDT), then stored as UTC.
+Examples:
+- Valid: `12:00`, `12:15`, `12:30`, `12:45`
+- Invalid: `12:10`, `12:22`
 
 ## Voice Setup (Connect + Lex)
 
@@ -210,6 +215,7 @@ This is a realistic example of how the service works during a live call.
 5. Booking rule behavior
    - If caller already has one future active appointment, a second booking is blocked.
    - Caller must cancel existing future appointment or reschedule it.
+   - If requested 15-minute slot is already taken by someone else, booking/rescheduling is rejected.
 
 ## Key Parameters
 
@@ -224,6 +230,7 @@ In `template.yaml`:
 - `NotificationPhoneNumber` (E.164)
 - `LexBotAliasArn`
 - `ConnectInstanceArn`
+- `AppointmentSlotsTable` (output only; stores global 15-minute slot locks)
 
 In `.env` (used by deploy script):
 

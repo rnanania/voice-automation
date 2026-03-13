@@ -39,6 +39,7 @@ Globals:
     Environment:
       Variables:
         APPOINTMENTS_TABLE: !Ref AppointmentsTable
+        APPOINTMENT_SLOTS_TABLE: !Ref AppointmentSlotsTable
         PHONE_AUTH_TABLE: !Ref PhoneAuthTable
         APPOINTMENT_ARCHIVE_BUCKET: !Ref AppointmentArchiveBucket
         SERVICE_TIMEZONE: !Ref ServiceTimezone
@@ -73,6 +74,8 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref AppointmentsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AppointmentSlotsTable
         - S3CrudPolicy:
             BucketName: !Ref AppointmentArchiveBucket
       Events:
@@ -96,6 +99,8 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref AppointmentsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AppointmentSlotsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref PhoneAuthTable
         - S3CrudPolicy:
@@ -141,6 +146,17 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
+
+  AppointmentSlotsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: slotStart
+          AttributeType: S
+      KeySchema:
+        - AttributeName: slotStart
+          KeyType: HASH
 
   PhoneAuthTable:
     Type: AWS::DynamoDB::Table
@@ -297,6 +313,8 @@ Outputs:
     Value: !Sub https://${AppointmentApi}.execute-api.${AWS::Region}.amazonaws.com
   AppointmentsTableName:
     Value: !Ref AppointmentsTable
+  AppointmentSlotsTableName:
+    Value: !Ref AppointmentSlotsTable
   PhoneAuthTableName:
     Value: !Ref PhoneAuthTable
   AppointmentArchiveBucketName:
